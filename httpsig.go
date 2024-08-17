@@ -27,7 +27,6 @@ const (
 	HMAC_SHA256      Algorithm = hmacPrefix + "-" + sha256String
 	HMAC_SHA384      Algorithm = hmacPrefix + "-" + sha384String
 	HMAC_SHA512      Algorithm = hmacPrefix + "-" + sha512String
-	HMAC_RIPEMD160   Algorithm = hmacPrefix + "-" + ripemd160String
 	HMAC_SHA3_224    Algorithm = hmacPrefix + "-" + sha3_224String
 	HMAC_SHA3_256    Algorithm = hmacPrefix + "-" + sha3_256String
 	HMAC_SHA3_384    Algorithm = hmacPrefix + "-" + sha3_384String
@@ -43,19 +42,16 @@ const (
 	BLAKE2B_384      Algorithm = blake2b_384String
 	BLAKE2B_512      Algorithm = blake2b_512String
 	// RSA-based algorithms.
-	RSA_SHA1   Algorithm = rsaPrefix + "-" + sha1String
 	RSA_SHA224 Algorithm = rsaPrefix + "-" + sha224String
 	// RSA_SHA256 is the default algorithm.
-	RSA_SHA256    Algorithm = rsaPrefix + "-" + sha256String
-	RSA_SHA384    Algorithm = rsaPrefix + "-" + sha384String
-	RSA_SHA512    Algorithm = rsaPrefix + "-" + sha512String
-	RSA_RIPEMD160 Algorithm = rsaPrefix + "-" + ripemd160String
+	RSA_SHA256 Algorithm = rsaPrefix + "-" + sha256String
+	RSA_SHA384 Algorithm = rsaPrefix + "-" + sha384String
+	RSA_SHA512 Algorithm = rsaPrefix + "-" + sha512String
 	// ECDSA algorithms
-	ECDSA_SHA224    Algorithm = ecdsaPrefix + "-" + sha224String
-	ECDSA_SHA256    Algorithm = ecdsaPrefix + "-" + sha256String
-	ECDSA_SHA384    Algorithm = ecdsaPrefix + "-" + sha384String
-	ECDSA_SHA512    Algorithm = ecdsaPrefix + "-" + sha512String
-	ECDSA_RIPEMD160 Algorithm = ecdsaPrefix + "-" + ripemd160String
+	ECDSA_SHA224 Algorithm = ecdsaPrefix + "-" + sha224String
+	ECDSA_SHA256 Algorithm = ecdsaPrefix + "-" + sha256String
+	ECDSA_SHA384 Algorithm = ecdsaPrefix + "-" + sha384String
+	ECDSA_SHA512 Algorithm = ecdsaPrefix + "-" + sha512String
 	// ED25519 algorithms
 	// can only be SHA512
 	ED25519 Algorithm = ed25519Prefix
