@@ -210,11 +210,13 @@ func (r *rsaAlgorithm) Sign(rand io.Reader, p crypto.PrivateKey, sig []byte) ([]
 			if err != nil {
 				return nil, err
 			}
-		} else {
-			sshsig, err = r.sshSigner.(ssh.AlgorithmSigner).SignWithAlgorithm(rand, sig, ssh.SigAlgoRSASHA2256)
+		} else if as, ok := r.sshSigner.(ssh.AlgorithmSigner); ok {
+			sshsig, err = as.SignWithAlgorithm(rand, sig, ssh.SigAlgoRSASHA2256)
 			if err != nil {
 				return nil, err
 			}
+		} else {
+			return nil, errors.New("signer does not implement ssh.AlgorithmSigner")
 		}
 
 		return sshsig.Blob, nil
