@@ -3,6 +3,8 @@ package httpsig
 import (
 	"bytes"
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -19,6 +21,7 @@ import (
 	"testing"
 
 	"golang.org/x/crypto/ed25519"
+	"golang.org/x/crypto/ssh"
 )
 
 const (
@@ -63,6 +66,7 @@ type ed25519PubKey struct {
 
 var (
 	privKey               *rsa.PrivateKey
+	privECDSAKey          *ecdsa.PrivateKey
 	macKey                []byte
 	tests                 []httpsigTest
 	testSpecRSAPrivateKey *rsa.PrivateKey
@@ -74,6 +78,10 @@ var (
 func init() {
 	var err error
 	privKey, err = rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		panic(err)
+	}
+	privECDSAKey, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		panic(err)
 	}
@@ -140,6 +148,32 @@ func init() {
 			expectedDigest:             "SHA-256=07PJQngqg8+BlomdI6zM7ieOxhINWI+iivJxBDSm3Dg=",
 		},
 		{
+			name:                       "ecdsa signature",
+			prefs:                      []Algorithm{ECDSA_SHA256},
+			digestAlg:                  DigestSha256,
+			headers:                    []string{"Date", "Digest"},
+			scheme:                     Signature,
+			privKey:                    privECDSAKey,
+			pubKey:                     privECDSAKey.Public(),
+			pubKeyId:                   "pubKeyId",
+			expectedAlgorithm:          ECDSA_SHA256,
+			expectedSignatureAlgorithm: "hs2019",
+		},
+		{
+			name:                       "digest on ecdsa signature",
+			prefs:                      []Algorithm{ECDSA_SHA256},
+			digestAlg:                  DigestSha256,
+			headers:                    []string{"Date", "Digest"},
+			body:                       []byte("Last night as I lay dreaming This strangest kind of feeling Revealed its secret meaning And now I know..."),
+			scheme:                     Signature,
+			privKey:                    privECDSAKey,
+			pubKey:                     privECDSAKey.Public(),
+			pubKeyId:                   "pubKeyId",
+			expectedAlgorithm:          ECDSA_SHA256,
+			expectedSignatureAlgorithm: "hs2019",
+			expectedDigest:             "SHA-256=07PJQngqg8+BlomdI6zM7ieOxhINWI+iivJxBDSm3Dg=",
+		},
+		{
 			name:                       "hmac signature",
 			prefs:                      []Algorithm{HMAC_SHA256},
 			digestAlg:                  DigestSha256,
@@ -187,6 +221,18 @@ func init() {
 			pubKey:                     pubEd25519Key,
 			pubKeyId:                   "pubKeyId",
 			expectedAlgorithm:          ED25519,
+			expectedSignatureAlgorithm: "hs2019",
+		},
+		{
+			name:                       "ecdsa authorization",
+			prefs:                      []Algorithm{ECDSA_SHA256},
+			digestAlg:                  DigestSha256,
+			headers:                    []string{"Date", "Digest"},
+			scheme:                     Authorization,
+			privKey:                    privECDSAKey,
+			pubKey:                     privECDSAKey.Public(),
+			pubKeyId:                   "pubKeyId",
+			expectedAlgorithm:          ECDSA_SHA256,
 			expectedSignatureAlgorithm: "hs2019",
 		},
 		{
@@ -388,6 +434,121 @@ func TestSignerResponse(t *testing.T) {
 			testFn(t, test)
 		})
 	}
+}
+
+func TestGetSSHAlgorithm(t *testing.T) {
+	sshTests := []struct {
+		pkType   string
+		expected Algorithm
+	}{
+		{ssh.KeyAlgoED25519, ED25519},
+		{ssh.CertAlgoED25519v01, ED25519},
+		{ssh.KeyAlgoRSA, RSA_SHA256},
+		{ssh.CertAlgoRSAv01, RSA_SHA256},
+		{ssh.KeyAlgoECDSA256, ECDSA_SHA256},
+		{ssh.CertAlgoECDSA256v01, ECDSA_SHA256},
+		{ssh.KeyAlgoECDSA384, ""},
+		{ssh.KeyAlgoECDSA521, ""},
+		{"ssh-dss", ""},
+	}
+	for _, test := range sshTests {
+		if got := getSSHAlgorithm(test.pkType); got != test.expected {
+			t.Errorf("%q: got %q, want %q", test.pkType, got, test.expected)
+		}
+	}
+}
+
+func TestSSHSignerRequest(t *testing.T) {
+	pubEd25519Key, privEd25519Key, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("error generating ed25519 key: %s", err)
+	}
+	sshTests := []struct {
+		name              string
+		privKey           crypto.PrivateKey
+		pubKey            crypto.PublicKey
+		expectedAlgorithm Algorithm
+	}{
+		{
+			name:              "rsa",
+			privKey:           privKey,
+			pubKey:            privKey.Public(),
+			expectedAlgorithm: RSA_SHA256,
+		},
+		{
+			name:              "ed25519",
+			privKey:           privEd25519Key,
+			pubKey:            pubEd25519Key,
+			expectedAlgorithm: ED25519,
+		},
+		{
+			name:              "ecdsa",
+			privKey:           privECDSAKey,
+			pubKey:            privECDSAKey.Public(),
+			expectedAlgorithm: ECDSA_SHA256,
+		},
+	}
+	for _, test := range sshTests {
+		for _, useCert := range []bool{false, true} {
+			name := test.name
+			if useCert {
+				name += " certificate"
+			}
+			t.Run(name, func(t *testing.T) {
+				sshSigner, err := ssh.NewSignerFromKey(test.privKey)
+				if err != nil {
+					t.Fatalf("error creating ssh signer: %s", err)
+				}
+				if useCert {
+					sshSigner = newTestCertSigner(t, sshSigner)
+				}
+				s, algo, err := NewSSHSigner(sshSigner, DigestSha256, []string{"Date", "Digest"}, Signature, 0)
+				if err != nil {
+					t.Fatalf("error creating ssh http signer: %s", err)
+				}
+				if algo != test.expectedAlgorithm {
+					t.Fatalf("got %s, want %s", algo, test.expectedAlgorithm)
+				}
+				req, err := http.NewRequest(testMethod, testUrl, nil)
+				if err != nil {
+					t.Fatalf("error creating request: %s", err)
+				}
+				req.Header.Set("Date", testDate)
+				req.Header.Set("Digest", testDigest)
+				if err := s.SignRequest("pubKeyId", req, nil); err != nil {
+					t.Fatalf("error signing request: %s", err)
+				}
+				v, err := NewVerifier(req)
+				if err != nil {
+					t.Fatalf("error creating verifier: %s", err)
+				}
+				if v.KeyId() != "pubKeyId" {
+					t.Errorf("KeyId mismatch\nGot: %s\nWant: pubKeyId", v.KeyId())
+				}
+				if err := v.Verify(test.pubKey, algo); err != nil {
+					t.Errorf("Verification failure: %s", err)
+				}
+			})
+		}
+	}
+}
+
+func newTestCertSigner(t *testing.T, s ssh.Signer) ssh.Signer {
+	t.Helper()
+	cert := &ssh.Certificate{
+		Key:         s.PublicKey(),
+		CertType:    ssh.UserCert,
+		KeyId:       "test",
+		ValidBefore: ssh.CertTimeInfinity,
+	}
+	if err := cert.SignCert(rand.Reader, s); err != nil {
+		t.Fatalf("error signing certificate: %s", err)
+	}
+	certSigner, err := ssh.NewCertSigner(cert, s)
+	if err != nil {
+		t.Fatalf("error creating certificate signer: %s", err)
+	}
+	return certSigner
 }
 
 func TestNewSignerRequestMissingHeaders(t *testing.T) {

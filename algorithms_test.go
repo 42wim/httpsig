@@ -2,6 +2,8 @@ package httpsig
 
 import (
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/rsa"
@@ -298,6 +300,26 @@ func TestSignerFromString(t *testing.T) {
 			input:      rsa_BLAKE2B_512,
 			expectKind: crypto.BLAKE2b_512,
 		},
+		{
+			name:       "ECDSA_SHA224",
+			input:      ECDSA_SHA224,
+			expectKind: crypto.SHA224,
+		},
+		{
+			name:       "ECDSA_SHA256",
+			input:      ECDSA_SHA256,
+			expectKind: crypto.SHA256,
+		},
+		{
+			name:       "ECDSA_SHA384",
+			input:      ECDSA_SHA384,
+			expectKind: crypto.SHA384,
+		},
+		{
+			name:       "ECDSA_SHA512",
+			input:      ECDSA_SHA512,
+			expectKind: crypto.SHA512,
+		},
 	}
 	for _, test := range tests {
 		s, err := signerFromString(string(test.input))
@@ -511,9 +533,10 @@ func TestMACerFromString(t *testing.T) {
 
 func TestSignerSigns(t *testing.T) {
 	tests := []struct {
-		name                 string
-		input                Algorithm
-		inputCryptoHash      crypto.Hash
+		name            string
+		input           Algorithm
+		inputCryptoHash crypto.Hash
+		// Only the BLAKE2 hashes lack a PKCS#1 v1.5 DigestInfo prefix.
 		expectRSAUnsupported bool
 	}{
 		{
@@ -537,40 +560,34 @@ func TestSignerSigns(t *testing.T) {
 			inputCryptoHash: crypto.SHA512,
 		},
 		{
-			name:                 "rsa_SHA3_224",
-			input:                rsa_SHA3_224,
-			inputCryptoHash:      crypto.SHA3_224,
-			expectRSAUnsupported: true,
+			name:            "rsa_SHA3_224",
+			input:           rsa_SHA3_224,
+			inputCryptoHash: crypto.SHA3_224,
 		},
 		{
-			name:                 "rsa_SHA3_256",
-			input:                rsa_SHA3_256,
-			inputCryptoHash:      crypto.SHA3_256,
-			expectRSAUnsupported: true,
+			name:            "rsa_SHA3_256",
+			input:           rsa_SHA3_256,
+			inputCryptoHash: crypto.SHA3_256,
 		},
 		{
-			name:                 "rsa_SHA3_384",
-			input:                rsa_SHA3_384,
-			inputCryptoHash:      crypto.SHA3_384,
-			expectRSAUnsupported: true,
+			name:            "rsa_SHA3_384",
+			input:           rsa_SHA3_384,
+			inputCryptoHash: crypto.SHA3_384,
 		},
 		{
-			name:                 "rsa_SHA3_512",
-			input:                rsa_SHA3_512,
-			inputCryptoHash:      crypto.SHA3_512,
-			expectRSAUnsupported: true,
+			name:            "rsa_SHA3_512",
+			input:           rsa_SHA3_512,
+			inputCryptoHash: crypto.SHA3_512,
 		},
 		{
-			name:                 "rsa_SHA512_224",
-			input:                rsa_SHA512_224,
-			inputCryptoHash:      crypto.SHA512_224,
-			expectRSAUnsupported: true,
+			name:            "rsa_SHA512_224",
+			input:           rsa_SHA512_224,
+			inputCryptoHash: crypto.SHA512_224,
 		},
 		{
-			name:                 "rsa_SHA512_256",
-			input:                rsa_SHA512_256,
-			inputCryptoHash:      crypto.SHA512_256,
-			expectRSAUnsupported: true,
+			name:            "rsa_SHA512_256",
+			input:           rsa_SHA512_256,
+			inputCryptoHash: crypto.SHA512_256,
 		},
 		{
 			name:                 "rsa_BLAKE2S_256",
@@ -715,6 +732,61 @@ func TestSignerVerifies(t *testing.T) {
 		}
 		err = s.Verify(privKey.Public(), toHash, signature)
 		if err != nil {
+			t.Fatalf("%q: %s", test.name, err)
+		}
+	}
+}
+
+// ECDSA signatures are not deterministic, so sign and verify are tested as a
+// round trip instead of against a fixed signature.
+func TestECDSASignerSignsAndVerifies(t *testing.T) {
+	tests := []struct {
+		name  string
+		input Algorithm
+		curve elliptic.Curve
+	}{
+		{
+			name:  "ECDSA_SHA224",
+			input: ECDSA_SHA224,
+			curve: elliptic.P256(),
+		},
+		{
+			name:  "ECDSA_SHA256",
+			input: ECDSA_SHA256,
+			curve: elliptic.P256(),
+		},
+		{
+			name:  "ECDSA_SHA384",
+			input: ECDSA_SHA384,
+			curve: elliptic.P384(),
+		},
+		{
+			name:  "ECDSA_SHA512",
+			input: ECDSA_SHA512,
+			curve: elliptic.P521(),
+		},
+	}
+	for _, test := range tests {
+		privKey, err := ecdsa.GenerateKey(test.curve, rand.Reader)
+		if err != nil {
+			t.Fatalf("%q: Failed setup: %s", test.name, err)
+		}
+		toHash := make([]byte, 65535)
+		n, err := doNotUseInProdCode.Read(toHash)
+		if n != len(toHash) {
+			t.Fatalf("%q: Failed setup: %d bytes != %d bytes", test.name, n, len(toHash))
+		} else if err != nil {
+			t.Fatalf("%q: Failed setup: %s", test.name, err)
+		}
+		s, err := signerFromString(string(test.input))
+		if err != nil {
+			t.Fatalf("%q: %s", test.name, err)
+		}
+		signature, err := s.Sign(rand.Reader, privKey, toHash)
+		if err != nil {
+			t.Fatalf("%q: %s", test.name, err)
+		}
+		if err := s.Verify(privKey.Public(), toHash, signature); err != nil {
 			t.Fatalf("%q: %s", test.name, err)
 		}
 	}
